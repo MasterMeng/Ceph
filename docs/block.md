@@ -528,4 +528,14 @@ rbd-mirror也可以在前台通过rbd-mirror命令启动：
 
 ## image实时迁移  
 
-RBD images可以在同一集群的不同资源池或不同image格式和布局之间实时迁移。
+RBD images可以在同一集群的不同资源池或不同image格式和布局之间实时迁移。启动时，源image会被深拷贝到目标image上，提取所有快照历史记录，并可选择保留到源image的父image的任何链接，以帮助保持稀疏性。  
+
+新的目标image在使用的同时赋值操作可以安全地在后台运行。在准备迁移之前，需要暂时停止使用源image，这有助于确保该image的客户端被更新为指向新的目标image。  
+
+![image live migration](../images/Live_migration.png)  
+
+实时迁移过程由三步组成：  
+
+1. **准备迁移**：
+2. **执行迁移**：
+3. **结束迁移**
