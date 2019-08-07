@@ -536,6 +536,99 @@ RBD images可以在同一集群的不同资源池或不同image格式和布局�
 
 实时迁移过程由三步组成：  
 
-1. **准备迁移**：
-2. **执行迁移**：
-3. **结束迁移**
+1. **准备迁移**：初始步骤创建新的目标image并交叉链接源image和目标image。与<font color="red">分层映像</font>相似，尝试读取目标image中未初始化的区域将在内部重定向到源image，而写入目标image中未初始化区域将在内部将重叠的源image块深拷贝到目标image。
+2. **执行迁移**：将所有初始化的块从源image深拷贝到目标，该操作在后台执行。此步骤可以在客户端活跃访问新目标image时执行。
+3. **结束迁移**：一旦后台迁移操作完成，就可以提交或者中断迁移。提交迁移将删除源与目标image之间的交叉链接并移除源image。中断迁移将移除交叉链接并移除目标image。  
+
+### 准备迁移  
+
+执行`rbd migration prepare`命令初始化实时迁移操作，需要体统源与目标images：  
+
+> $ rbd migration prepare migration_source [migration_target]  
+
+`rbd migration prepare`命令接收与`rbd create`命令相同的布局选项,它允许更改磁盘上不可更改的image布局。如果只是更改磁盘上的布局，*migration_target*可省略，沿用原始image名称。  
+
+准备进行实时迁移前，所有使用源image的客户端都必须停止使用。如果发现有任何客户端以读/写模式打开image，准备步骤将会失败。一旦准备步骤完成，客户端可以使用心得目标image名称重启。尝试使用源image重启的客户端将重启失败。  
+
+`rbd status`命令可以展示实时迁移的当前状态：  
+
+```bash
+$ rbd status migration_target
+Watchers: none
+Migration:
+            source: rbd/migration_source (5e2cba2f62e)
+            destination: rbd/migration_target (5e2ed95ed806)
+            state: prepared
+```
+
+注意，源image将被移动到RBD回收站中，以防迁移过程中的误操作：  
+
+```bash
+$ rbd info migration_source
+rbd: error opening image migration_source: (2) No such file or directory
+$ rbd trash ls --all
+5e2cba2f62e migration_source
+```
+
+### 执行迁移  
+
+准备完实时迁移之后，image块必须从源image中复制到目标image中。执行`rbd migration execute`命令可以实现上述操作：  
+
+```bash
+$ rbd migration execute migration_target
+Image migration: 100% complete...done.
+```
+
+`rbd status`命令也可提供深拷贝过程中迁移块操作的反馈：  
+
+```bash
+$ rbd status migration_target
+Watchers:
+    watcher=1.2.3.4:0/3695551461 client.123 cookie=123
+Migration:
+            source: rbd/migration_source (5e2cba2f62e)
+            destination: rbd/migration_target (5e2ed95ed806)
+            state: executing (32% complete)
+```  
+
+### 提交迁移  
+
+一旦实时迁移完成从源image到目标image所有数据块的深拷贝操作，迁移操作就可以提交：  
+
+```bash
+$ rbd status migration_target
+Watchers: none
+Migration:
+            source: rbd/migration_source (5e2cba2f62e)
+            destination: rbd/migration_target (5e2ed95ed806)
+            state: executed
+$ rbd migration commit migration_target
+Commit image migration: 100% complete...done.
+```
+如果*migration_source*image是一个或者多个克隆体的父节点，在确保所有的克隆体都停用后需要额外提供 *-force*选项。  
+
+提交迁移将删除源与目标image之间的交叉链接并移除源image：  
+
+> $ rbd trash list --all
+
+### 中断迁移  
+
+如果你想回退准备或执行步骤，执行`rbd migration abort`命令可以回退迁移过程：  
+
+```bash
+$ rbd migration abort migration_target
+Abort image migration: 100% complete...done.
+```
+
+中断迁移将删除目标image，并访问要恢复的原始源image：  
+
+```bash 
+$ rbd ls
+migration_source
+```
+
+## RBD 持久缓存  
+
+### 共享的、只读父image缓存  
+
+从父image<font color="red">克隆的RBD images</font>通常只修改了image中的一小部分。例如，在VDI工作模式下，VMs是从同一基础image克隆的，仅主机名称和IP地址不同。在启动阶段，所有的VMs都将从RADOS集群中重新读取父image重复部分的数据。
