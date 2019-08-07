@@ -631,4 +631,22 @@ migration_source
 
 ### 共享的、只读父image缓存  
 
-从父image<font color="red">克隆的RBD images</font>通常只修改了image中的一小部分。例如，在VDI工作模式下，VMs是从同一基础image克隆的，仅主机名称和IP地址不同。在启动阶段，所有的VMs都将从RADOS集群中重新读取父image重复部分的数据。
+从父image<font color="red">克隆的RBD images</font>通常只修改了image中的一小部分。例如，在VDI工作模式下，VMs是从同一基础image克隆的，仅主机名称和IP地址不同。在启动阶段，从集群里重新读取的父image其实很大部分是重复的。如果本地有父image的缓存，不仅可以加快读取速度、降低等待事件，还能减少客户机到集群的网络流量。RBD共享的只读父image缓存需要在*ceph.conf*中显式启用。ceph-immmutable-object-cache守护进程负责将父内容缓存到本地磁盘上，将来对该数据的读取将从本地缓存提供服务。  
+
+![RBD Persistent Cache](../images/RBD_Persistent_Cache_00.png)  
+
+#### 启用RBD共享只读父image缓存  
+
+要启用RBD共享只读父image缓存，需要在你的ceph.conf文件中的[client]部分添加如下设置：  
+
+> rbd parent cache enabled = true  
+
+### 不可变对象缓存守护进程  
+
+ceph-immmutable-object-cache守护进程负责将父内容缓存到本地缓存目录上。为了获得更好的性能，建议使用SSD作为底层存储介质。  
+
+守护进程的关键组件有：  
+
+$\qquad$1. **Domain socket based IPC**：守护进程将在启动时监听本地域套接字，并等待来自librbd客户端的连接。
+$\qquad$2. **LRU based promotion/demotion policy**：
+$\qquad$3. **File-based caching store**：
