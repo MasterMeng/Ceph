@@ -1135,7 +1135,21 @@ None:
 
 > rbd_cache = false  
 
-QEMU的缓存设置会覆盖Ceph的缓存设置（包括在Ceph配置文件中明确设置的配置）。  
+QEMU的缓存设置会覆盖Ceph的缓存设置（包括在Ceph配置文件中明确设置的配置）。    
+
+## 块设备与OpenStack  
+
+你可以通过libvirt在OpenStack中使用Ceph块设备images，将QEMU接口配置为librbd。Ceph在集群中将块设备images条带化为对象，这意味着大型的Ceph块设备images拥有比单独的服务器更好的性能！  
+
+要在OpenStack中使用Ceph块设备，首先你必须安装QEMU，libvirt和OpenStack。我们建议你使用单独的物理设备安装OpenStack。OpenStack建议最小8GB RAM和四核处理器。下图描绘了OpenStack/Ceph的技术栈。  
+
+![Ceph with OpenStack](../images/Ceph_OpenStack.png)  
+
+OpenStack的三个部分与Ceph块设备集成：  
+
+* **Images**：OpenStack Glance管理着VMs的镜像。镜像是不可变的。OpenStack将镜像视为二进制块并对应的下载它们。
+* **Volumes**：Volumes是块设备。OpenStack使用volume引导VMs，或挂载volumes来运行VMs。OpenStack使用Cinder服务管理volumes。
+* **Guest Disks**：
 
 ## Ceph iSCSI网关  
 
