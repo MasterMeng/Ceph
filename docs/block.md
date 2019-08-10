@@ -1137,6 +1137,204 @@ None:
 
 QEMU的缓存设置会覆盖Ceph的缓存设置（包括在Ceph配置文件中明确设置的配置）。    
 
+## libvirt与Ceph RBD  
+
+libvirt库在管理程序接口和使用它们的软件应用程序之间创建了一个虚拟机抽象层。使用libvirt，在许多不同的管理程序间，开发者和系统管理员可以关注于通用管理框架、通用API和通用shell接口（即，virsh），包括：  
+
+* QEMU/KVM
+* XEN
+* LXC
+* VirtualBox
+* 等等  
+
+Ceph块设备支持QEMU/KVM。你可以通过使用libvirt接口的软件来使用Ceph块设备。下图描述了libvirt和QEMU如何通过librbd来使用Ceph块设备。  
+
+![Ceph with libvirt](../images/Ceph_libvirt.png)  
+
+最常见的需要libvirt提供Ceph块设备的使用场景是云解决方案，例如OpenStack和CloudStack。云解决方案使用libvirt与QEMU/KVM进行交互，QEMU/KVM通过librbd与Ceph块设备进行交互。详见[<font color="red">块设备与OpenStack</font>](https://docs.ceph.com/docs/master/rbd/rbd-openstack)和[<font color="red">块设备与CloudStack</font>](https://docs.ceph.com/docs/master/rbd/rbd-cloudstack)。安装详见[<font color="red">安装</font>](https://docs.ceph.com/docs/master/install)。  
+
+你也可以通过Libvirt、virsh和libvirt API来使用Ceph块设备。详见[<font color="red">libvirt虚拟化API</font>](http://www.libvirt.org/)。  
+
+要使用Ceph块设备创建VMs，可使用以下章节中的操作。在接下来的示例中，我们使用libvirt-pool作为资源池名称，client.libvirt作为用户名，new-libvirt-image作为image名称。当然你可以使用你喜欢的名称，但请确保在随后的操作中执行命令时替换这些名称。  
+
+### 配置Ceph  
+
+要配置Ceph以便libvirt使用，执行下列步骤：  
+
+1. [<font color="red">创建资源池</font>](https://docs.ceph.com/docs/master/rados/operations/pools#create-a-pool)。下面的示例是创建一个拥有128个归置组的名为libvirt-pool的资源池：  
+
+> ceph osd pool create libvirt-pool 128 128
+
+确认资源池已存在：  
+
+> ceph osd lspools
+
+2. 使用rbd工具RBD初始化资源池：  
+
+> rbd pool init \<pool-name>
+
+3. [<font color="red">创建Ceph用户</font>](https://docs.ceph.com/docs/master/rados/operations/user-management#add-a-user)。下面的示例是使用名为client.libvirt的用户和引用libvirt-pool：  
+
+> ceph auth get-or-create client.libvirt mon 'profile rbd' osd 'profile rbd pool=libvirt-pool'
+
+确认用户已存在：  
+
+> ceph auth ls
+
+4. 使用QEMU在你的RBD池中[<font color="red">创建image</font>](https://docs.ceph.com/docs/master/rbd/qemu-rbd#creating-images-with-qemu)。下面吗的示例是引用libvirt-pool创建名为new-libvirt-image的image：  
+
+> qemu-img create -f rbd rbd:libvirt-pool/new-libvirt-image 2G
+
+确认image以存在：  
+
+> rbd -p libvirt-pool ls
+
+> 你也可以使用[<font color="red">rbd create</font>]来创建image，但我们建议确保QEMU可以正常工作。  
+
+### 准备VM管理员  
+
+你可能在没有VM管理员的情况下使用libvirt，但你会发现使用virt-manager来创建你的第一域更简单。  
+
+1. 安装虚拟机管理员。详见[<font red="red">KVM/VirtManager</font>]。  
+
+> sudo apt-get install virt-manager
+
+2. 如果需要，下载系统镜像。
+3. 启用虚拟机管理：  
+
+> sudo virt-manager
+
+### 创建一个VM  
+
+要使用virt-manager创建一个VM，执行以下步骤：  
+
+1. 按下**Create New Virtual Machine**按钮
+2. 命名新的虚拟机域。在接下来的示例中，我们使用libvirt-virtual-machine名称。你也可以使用你想要的名称，但要确保在接下的命令行和配置示例中替换你选则的名称。  
+
+> libvirt-virtual-machine
+
+3. 导入镜像
+
+> /path/to/image/recent-linux.img
+
+> 注意，导入最近的镜像。某些老的镜像可能无法重新扫描为正确的虚拟设备。
+
+4. 配置从启动VM
+5. 你可以使用`virsh list`来确认VM域已存在
+
+> sudo virsh list
+
+6. 登录VM(root/root)
+7. 配置VM使用Ceph前需要先关闭
+
+### 配置VM  
+
+在为Ceph配置VM时，在适当的地方使用virsh是很重要的。此外，virsh命令通常需要root权限（例如，sudo）且不会返回适当的结果，也不会通知你需要root权限。关于virsh命令的引用，详见[<font color="red">Virsh Command Reference</font>](http://www.libvirt.org/virshcmdref.html)。  
+
+1. 使用virsh edit打开配置文件。  
+
+> sudo virsh edit {vm-domain-name}
+
+\<devices>下应该有\<disk>条目。  
+
+```text  
+<devices>
+        <emulator>/usr/bin/kvm</emulator>
+        <disk type='file' device='disk'>
+                <driver name='qemu' type='raw'/>
+                <source file='/path/to/image/recent-linux.img'/>
+                <target dev='vda' bus='virtio'/>
+                <address type='drive' controller='0' bus='0' unit='0'/>
+        </disk>
+```  
+
+使用OS镜像的路径替换`/path/to/image/recent-linux.img`。使用更快的virtio的最小内核版本为2.6.25。详见[<font color="red">Virtio</font>](http://www.linux-kvm.org/page/Virtio)。  
+
+> **重要**：使用`sudo virsh edit`而不是文本编辑器。如果你使用文本编辑器编辑`/etc/libvirt/qemu`目录下的配置文件，libvirt可能不会感知到改变。如果`/etc/libvirt/qemu`目录下的XML文件内容与`sudo virsh dumpxml {vm-domain-name}`的返回结果有差异，你的VM可能不会正常工作。  
+
+2. 将你创建的Ceph RBD image作为\<disk>条目添加  
+
+```text
+<disk type='network' device='disk'>
+        <source protocol='rbd' name='libvirt-pool/new-libvirt-image'>
+                <host name='{monitor-host}' port='6789'/>
+        </source>
+        <target dev='vda' bus='virtio'/>
+</disk>
+```  
+
+使用你的主机名替换{monitor-host}，替换资源池或image名称也是必要。你也可以为你的Ceph监视器添加多个\<host>条目。逻辑设备的属性可在你的VM的`/dev`目录下找到。bus属性选项指示要模拟的硬盘设备的类型。驱动的有效设置是明确的（即，“ide”，“scsi”，“virtio”，“xen”，“usb”或“sata”）。  
+
+\<disk>元素及其子元素和属性，详见[<font color="red">Disks</font>](http://www.libvirt.org/formatdomain.html#elementsDisks)。  
+
+3. 保存文件
+4. 如果你的Ceph存储集群已启用[<font color="red">Ceph 认证</font>](https://docs.ceph.com/docs/master/rados/configuration/auth-config-ref)（默认启用），你必须生成密码  
+
+```bash
+cat > secret.xml <<EOF
+<secret ephemeral='no' private='no'>
+        <usage type='ceph'>
+                <name>client.libvirt secret</name>
+        </usage>
+</secret>
+EOF
+```  
+
+5. 定义密码  
+
+```bash
+sudo virsh secret-define --file secret.xml
+<uuid of secret is output here>
+```  
+
+6. 获取并保存client.libvirt密钥到文件中  
+
+> ceph auth get-key client.libvirt | sudo tee client.libvirt.key
+
+7. 设置密码的UUID  
+
+> sudo virsh secret-set-value --secret {uuid of secret} --base64 $(cat client.libvirt.key) && rm client.libvirt.key secret.xml
+
+你必须通过手动添加下面的\<auth>条目到你之前创建的\<disk>元素的方式来设置密码（UUID的值用从上述命令得到的结果替换）。  
+
+> sudo virsh edit {vm-domain-name}  
+
+然后添加\<auth>\</auth>元素到域配置文件中：  
+
+```text
+...
+</source>
+<auth username='libvirt'>
+        <secret type='ceph' uuid='9ec59067-fdbc-a6c0-03ff-df165c0587b8'/>
+</auth>
+<target ...
+```  
+
+> **注意**：示例ID是libvirt，而不是第二部<font color="red">配置Ceph</font>生成的Ceph名称 client.libvirt。确保你使用的Ceph名称的ID组件是你生成的。如果由于某些原因你需要重新生成密码。在你再次执行`sudo virsh secret-set-value`命令之前，你必须要先执行`sudo virsh secret-undefine {uuid}`命令。  
+
+### 总结  
+
+在你配置你的VM使用Ceph之前，你可以先启动VM。建议先确认VM和Ceph状态，你可以使用下面的操作。  
+
+1. 检查Ceph是否运行：  
+
+> ceph health  
+
+2. 检查VM是否运行：  
+
+> sudo virsh list
+
+3. 检查VM是否可以访问Ceph。使用的VM域替换{vm-domain-name}：  
+
+> sudo virsh qemu-monitor-command --hmp {vm-domain-name} 'info block'  
+
+4. 检查`<target dev='hdb' bus='ide'/>`下的驱动是否存在/dev或/proc/partitions下：  
+
+> ls /dev
+> cat /proc/patitions
+
+如果每一步都成功，那么你可以在你的VM中使用Ceph块设备了。
+
 ## 块设备与OpenStack  
 
 你可以通过libvirt在OpenStack中使用Ceph块设备images，将QEMU接口配置为librbd。Ceph在集群中将块设备images条带化为对象，这意味着大型的Ceph块设备images拥有比单独的服务器更好的性能！  
@@ -1149,7 +1347,281 @@ OpenStack的三个部分与Ceph块设备集成：
 
 * **Images**：OpenStack Glance管理着VMs的镜像。镜像是不可变的。OpenStack将镜像视为二进制块并对应的下载它们。
 * **Volumes**：Volumes是块设备。OpenStack使用volume引导VMs，或挂载volumes来运行VMs。OpenStack使用Cinder服务管理volumes。
-* **Guest Disks**：
+* **Guest Disks**：客户硬盘时客户操作系统的硬盘。默认情况下，当你启动虚拟机时，它的硬盘作为文件出现在虚拟机监控程序的文件系统上（通常在/var/lib/nova/instances/\<uuid>/下）。在OpenStack Havana之前，在Ceph中启动VM的唯一方法是使用Cinder的boot-from-volume功能。然后，现在不使用Cinder，直接在Ceph中启动每个虚拟机成为可能，这是非常有利的，应为它允许你使用实时迁移过程轻松地执行维护操作。此外，如果你的管理程序失效，还可以方便地触发nova疏散并在其它地方几乎无缝地运行虚拟机。  
+
+你也可以在Ceph块设备中使用OpenStack Glance来存储镜像，并且你可以通过写时复制克隆一个image来使用Cinder引导VM。  
+
+接下来的详细介绍Glance，Cinder和Nova，尽管它们不必一起使用。你可以在本地磁盘运行VM时将image存储到Ceph块设备中，反之亦可。  
+
+### 创建资源池  
+
+默认情况下，Ceph块设备使用rbd资源池。你也可以使用其它可用的资源池。我们建议你问Cinder创建一个资源池，也为Glance创建一个资源池。确保你的Ceph集群在运行中，然后创建资源池：  
+
+> ceph osd pool create volumes 128
+> ceph osd pool create images 128
+> ceph osd pool create backups 128
+> ceph osd pool create vms 128  
+
+资源池中归置组数量的说明详见[<font color="red">Create a Pool</font>](https://docs.ceph.com/docs/master/rados/operations/pools#createpool)，资源池中你应该设置的归置组数量详见[<font color="red">Placement Groups</font>](https://docs.ceph.com/docs/master/rados/operations/placement-groups)。  
+
+新创建的资源池在使用之前必须初始化。使用rbd工具初始化这些资源池：  
+
+> rbd pool init volumes
+> rbd pool init images
+> rbd pool init backups
+> rbd pool init vms
+
+### 配置OpenStack Ceph客户端  
+
+运行glance-api、cinder-volume、nova-compute和cinder-backup的节点作为Ceph客户端。每个节点都需要ceph.conf文件：  
+
+> ssh {your-openstack-server} sudo tee /etc/ceph/ceph.conf </etc/ceph/ceph.conf  
+
+#### 安装Ceph客户端包  
+
+在glance-api节点，你需要librbd的Python包：  
+
+> sudo apt-get install python-rbd
+> sudo yum install python-rbd
+
+在nove-compute、cinder-backup和cinder-volume节点，需要同时安装Python包和客户端命令行工具：  
+
+> sudo apt-get install ceph-common
+> sudo yum install ceph-common
+
+#### 安装Ceph 客户端认证  
+
+如果你已经启用了[<font color="red">cephx authentication</font>](https://docs.ceph.com/docs/master/rados/configuration/auth-config-ref/#enabling-disabling-cephx),需要为Nova/Cinder和Glance创建用户。执行以下命令：  
+
+> ceph auth get-or-create client.glance mon 'profile rbd' osd 'profile rbd pool=images'
+> ceph auth get-or-create client.cinder mon 'profile rbd' osd 'profile rbd pool=volumes, profile rbd pool=vms, profile rbd-read-only pool=images'
+> ceph auth get-or-create client.cinder-backup mon 'profile rbd' osd 'profile rbd pool=backups'
+
+将client.cinder、client.glance、client.cinder-backup的密钥环添加到合适的节点并改变它们的从属关系：  
+
+```bash
+ceph auth get-or-create client.glance | ssh {your-glance-api-server} sudo tee /etc/ceph/ceph.client.glance.keyring
+ssh {your-glance-api-server} sudo chown glance:glance /etc/ceph/ceph.client.glance.keyring
+ceph auth get-or-create client.cinder | ssh {your-volume-server} sudo tee /etc/ceph/ceph.client.cinder.keyring
+ssh {your-cinder-volume-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder.keyring
+ceph auth get-or-create client.cinder-backup | ssh {your-cinder-backup-server} sudo tee /etc/ceph/ceph.client.cinder-backup.keyring
+ssh {your-cinder-backup-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder-backup.keyring
+```  
+
+运行nova-compute的节点需要nova-compute进程的密钥环文件：  
+
+> ceph auth get-or-create client.cinder | ssh {your-nova-compute-server} sudo tee /etc/ceph/ceph.client.cinder.keyring
+
+在libvirt中，也需要存储client.cinder用户的密码。在从Cinder附加一个块设备时，libvirt需要它来访问集群。  
+
+在运行nova-compute的节点创建临时密码副本：  
+
+> ceph auth get-key client.cinder | ssh {your-compute-node} tee client.cinder.key
+
+然后，在计算节点上，添加密码到libvirt中并移除临时密钥副本：  
+
+```bash
+uuidgen
+457eb676-33da-42ec-9a8c-9293d545c337
+
+cat > secret.xml <<EOF
+<secret ephemeral='no' private='no'>
+  <uuid>457eb676-33da-42ec-9a8c-9293d545c337</uuid>
+  <usage type='ceph'>
+    <name>client.cinder secret</name>
+  </usage>
+</secret>
+EOF
+sudo virsh secret-define --file secret.xml
+Secret 457eb676-33da-42ec-9a8c-9293d545c337 created
+sudo virsh secret-set-value --secret 457eb676-33da-42ec-9a8c-9293d545c337 --base64 $(cat client.cinder.key) && rm client.cinder.key secret.xml
+```  
+
+保存密码的UUID以便后续配置nova-compute。  
+
+### 配置OpenStack使用Ceph  
+
+#### 配置Glance  
+
+Glance可以使用多个后端来存储镜像。要默认使用Ceph块设备，如下配置Glance。  
+
+##### KILO and After  
+
+编辑`/etc/glance/glance-api.conf`并新增如下[glance_store]章节：  
+
+```text
+[glance_store]
+stores = rbd
+default_store = rbd
+rbd_store_pool = images
+rbd_store_user = glance
+rbd_store_ceph_conf = /etc/ceph/ceph.conf
+rbd_store_chunk_size = 8
+```  
+
+更多有关Glance中可用的配置选项，请查看OpenStack配置应用：[<font color="red">http://docs.openstack.org/</font>](http://docs.openstack.org/)。  
+
+##### 启用镜像的写时复制  
+
+注意这会通过Glance的API公开后端位置，所以启用此选项的终端不应公开访问。  
+
+除了Mitaka外的所有OpenStack发行版  
+
+如果你想启用镜像的写时复制克隆，在[DEFAULT]章节下新增：  
+
+```text
+show_image_direct_url = True
+```  
+
+##### 禁用缓存管理（所有OpenStack发行版）  
+
+假设你的配置文件中有`flavor = keystone+cachemanagement`，禁用Glance的缓存管理以免在`/var/lib/glance/image-cache/`下缓存镜像：  
+
+```text
+[paste_deploy]
+flavor = keystone
+```  
+
+##### 镜像属性  
+
+我们建议为你的镜像使用如下属性：  
+
+* hw_scsi_model=virtio-scsi：添加virtio-scsi控制，获得更好的性能，支持丢弃选项
+* hw_disk_bus=scsi：连接每个Cinder块设备到控制器
+* hw_qemu_guest_agent=yes：启用QEMU客户代理
+* os_require_quiesce=yes：通过QEMU客户代理发送fs-freeze/thaw请求  
+
+#### 配置Cinder  
+
+OpenStack需要一个驱动与Ceph块设备进行交互。你必须为块设备指明资源池名称。在你的OpenStack节点上，编辑`/etc/cinder/cinder.conf `，添加：  
+
+```text
+[DEFAULT]
+...
+enabled_backends = ceph
+glance_api_version = 2
+...
+[ceph]
+volume_driver = cinder.volume.drivers.rbd.RBDDriver
+volume_backend_name = ceph
+rbd_pool = volumes
+rbd_ceph_conf = /etc/ceph/ceph.conf
+rbd_flatten_volume_from_snapshot = false
+rbd_max_clone_depth = 5
+rbd_store_chunk_size = 4
+rados_connect_timeout = -1
+```   
+
+如果你已经启用了[<font color="red">cephx authentication</font>](https://docs.ceph.com/docs/master/rados/configuration/auth-config-ref/#enabling-disabling-cephx)，如之前所述，你还要配置你添加的密码的用户和UUID：  
+
+```text
+[ceph]
+...
+rbd_user = cinder
+rbd_secret_uuid = 457eb676-33da-42ec-9a8c-9293d545c337
+```  
+
+注意，如果你配置了多个Cinder后端，在[DEFAULT]章节下必须设置glance_api_version = 2。  
+
+#### 配置Cinder备份  
+
+OpenStack Cinder Backup要求一个特殊的守护进程，所以别忘了安装它。在你的Cinder Backup节点，编辑`/etc/cinder/cinder.conf `并新增：  
+
+```text
+backup_driver = cinder.backup.drivers.ceph
+backup_ceph_conf = /etc/ceph/ceph.conf
+backup_ceph_user = cinder-backup
+backup_ceph_chunk_size = 134217728
+backup_ceph_pool = backups
+backup_ceph_stripe_unit = 0
+backup_ceph_stripe_count = 0
+restore_discard_excess_bytes = true
+```  
+
+#### 为附加Ceph RBD块设备配置Nova  
+
+为了附件Cinder设备（无论是普通的块设备还是从volume中引导），你必须告诉Nova（和libvirt）在附加设备时引用的是哪个用户和UUID。在连接和认证Ceph集群时，libvirt将使用这个用户。  
+
+```text
+[libvirt]
+...
+rbd_user = cinder
+rbd_secret_uuid = 457eb676-33da-42ec-9a8c-9293d545c337
+```  
+
+这两个标志会被Nova临时后端使用。  
+
+#### 配置Nova  
+
+为了直接从Ceph中引导所有的虚拟机，你必须为Nova配置临时后端。  
+
+建议在你的Ceph配置文件中（从Giant开始默认启用）启用RBD缓存。例外，启用管理员套接字在定位问题时将带来很多好处。使用Ceph块设备时为每一个虚拟机设置一个套接字将有助于调查性能和错误行为。  
+
+像下面这样反问套接字：  
+
+> ceph daemon /var/run/ceph/ceph-client.cinder.19195.32310016.asok help
+
+现在，在每个计算节点上编辑你的Ceph配置文件：  
+
+```text
+[client]
+    rbd cache = true
+    rbd cache writethrough until flush = true
+    admin socket = /var/run/ceph/guests/$cluster-$type.$id.$pid.$cctid.asok
+    log file = /var/log/qemu/qemu-guest-$pid.log
+    rbd concurrent management ops = 20
+```  
+
+配置这些路径的权限：  
+
+```bash
+mkdir -p /var/run/ceph/guests/ /var/log/qemu/
+chown qemu:libvirtd /var/run/ceph/guests /var/log/qemu/
+```  
+
+注意，QEMU用户和libvirt组可能因系统而异。提供的例子是基于RedHat系统工作的。  
+
+#### 重启OpenStack  
+
+为了激活Ceph块设备驱动和导入配置中的块设备资源池，你必须重启OpenStack。对于基于Debian系统，在合适的节点执行下列命令：  
+
+```bash
+sudo glance-control api restart
+sudo service nova-compute restart
+sudo service cinder-volume restart
+sudo service cinder-backup restart
+```  
+
+对于基于RedHa他系统，执行：  
+
+```bash
+sudo service openstack-glance-api restart
+sudo service openstack-nova-compute restart
+sudo service openstack-cinder-volume restart
+sudo service openstack-cinder-backup restart
+```
+
+一旦OpenStack上线运行，你应该能够创建卷并从中引导启动。  
+
+#### 从块设备中引导启动  
+
+使用Cinder命令行工具你可以从image中创建一个卷：  
+
+> cinder create --image-id {id of image} --display-name {name of volume} {size of volume}
+
+你可以使用[<font color="red">qemu-img</font>](https://docs.ceph.com/docs/master/rbd/qemu-rbd/#running-qemu-with-rbd)进行格式转换。例如：  
+
+```bash
+qemu-img convert -f {source-format} -O {output-format} {source-filename} {output-filename}
+qemu-img convert -f qcow2 -O raw precise-cloudimg.img precise-cloudimg.raw
+```  
+
+当Glance和Cinder都使用Ceph块设备，因为image是写时复制克隆，所以它可以快速地创建一个新的卷。在OpenStack dashboard中，通过下列步骤，你可以从卷中启动：  
+
+1. 创建一个新的实例
+2. 选择与写时复制克隆相关联的image
+3. 选择“从卷启动”
+4. 选择你创建的卷
 
 ## Ceph iSCSI网关  
 
