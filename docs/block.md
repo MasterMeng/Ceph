@@ -1685,7 +1685,7 @@ Ceph iSCSI网关既是iSCSI target节点，也是Ceph client节点。Ceph iSCSI�
 在Ansible安装节点，可以是管理节点或专业部署节点，执行以下操作：  
   1. 使用`root`安装`ceph-ansible`包：  
       
-    > \# yum install ceph-ansible
+    > # yum install ceph-ansible
 
   2. 在`/etc/ansible/hosts`文件中未网关组添加条目：
 
@@ -1718,12 +1718,12 @@ ceph-ansible包在`/usr/share/ceph-ansible/group_vars/`目录下放置了一个�
 
   1. 使用root执行Ansible手册：  
 
-    > \# cd /usr/share/ceph-ansible
-    > \# ansible-playbook site.yml --limit iscsigws
+    > # cd /usr/share/ceph-ansible
+    > # ansible-playbook site.yml --limit iscsigws
 
   2. 从iSCSI网关节点验证配置：  
 
-    > \# gwcli ls  
+    > # gwcli ls  
 
 **服务管理**：  
 
@@ -1824,25 +1824,25 @@ Ceph iSCSI网关既是iSCSI target节点也是Ceph client节点。Ceph iSCSI网�
 
    1. 在所有iSCSI网关节点上，使用root 安装 ceph-iscsi包：  
 
-    > \# yum install ceph-iscsi
+    > # yum install ceph-iscsi
 
    2. 在所有iSCSI网关节点上，使用root 安装 tcmu-runner包：  
 
-    > \# yum install tcmu-runner
+    > # yum install tcmu-runner
 
 **构建**：  
 
    1. gwcli需要一个名为rbd的池，因此它可以存储像iSCSI配置这样的元数据。检查这个池是否已经创建运行:  
 
-    > \# ceph osd lspools
+    > # ceph osd lspools  
 
-    如果不存在，创建资源池的操作可在[<font color="red">RADOS pool operations page</font>](http://docs.ceph.com/docs/master/rados/operations/pools/)找到。  
+  如果不存在，创建资源池的操作可在[<font color="red">RADOS pool operations page</font>](http://docs.ceph.com/docs/master/rados/operations/pools/) 找到。  
 
    2. 在iSCSI网关节点上，使用root在`/etc/ceph`目录下创建名为`iscsi-gateway.cfg`文件：  
 
-    > \# touch /etc/ceph/iscsi-gateway.cfg
+    > # touch /etc/ceph/iscsi-gateway.cfg
 
-      1. 编辑`iscsi-gateway.cfg`文件，添加以下内容：  
+  1. 编辑`iscsi-gateway.cfg`文件，添加以下内容：  
 
       ```text
       [config]
