@@ -2006,7 +2006,7 @@ gwtop工具是一个类似于top的工具，它显示通过iSCSI导出到客户�
 
 **要求**：  
 
-* 运行中的Ceph iSCSI网  
+* 运行中的Ceph iSCSI网关  
 
 **安装**：  
 
