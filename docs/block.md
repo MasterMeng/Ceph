@@ -1908,7 +1908,7 @@ gwcli将创建和配置iSCSI target和RBD images，并复制上一节的网关�
    4. 在rbd池中新增名为disk_1的RBD image：  
 
       > /iscsi-target...-igw/gateways> cd /disks
-      > /disks> create pool=rbd image=disk_1 size=90G
+      > /disks> create pool=rbd image=disk_1 size=30G
 
    5. 新建一个名为iqn.1994-05.com.redhat:rh7-client的initiator 客户端：  
 
